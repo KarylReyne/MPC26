@@ -1,0 +1,7 @@
+# compiler
+.cache
+exercise*/**/build
+
+# VSC
+.vscode
+
