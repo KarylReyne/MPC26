@@ -4,3 +4,6 @@ cd build
 cmake ..
 make
 <!-- ./executable -->
+
+<!-- run executable with memory check -->
+compute-sanitizer --tool memcheck ./executable [executable options]
