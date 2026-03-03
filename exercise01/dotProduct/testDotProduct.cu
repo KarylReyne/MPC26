@@ -36,7 +36,7 @@ __global__ void dotProdKernel(float* _dst, const float* _a1, const float* _a2, i
     // program your kernel here
     unsigned int tid = blockIdx.x * MAX_THREADS + threadIdx.x;
     float sum = 0;
-    for(int n = tid; n<_dim; n += MAX_BLOCKS*MAX_THREADS)
+    for(int n = tid; n<_dim; n += blockDim.x * gridDim.x)
     {
         sum += _a1[n] * _a2[n];
     }
@@ -145,7 +145,7 @@ int main(int argc, char* argv[])
         checkCUDAError("cudaMemcpy");
         for (int nElem = 0; nElem < MAX_BLOCKS * MAX_THREADS; nElem++)
         {
-            finalDotProduct +=h[nElem];
+            finalDotProduct += h[nElem];
         }
 
     }
