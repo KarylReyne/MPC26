@@ -34,7 +34,13 @@ __global__ void dotProdKernel(float* _dst, const float* _a1, const float* _a2, i
 {
 
     // program your kernel here
-    //!!!!!!!!! missing  !!!!!!!!!!!!!!!!!!!!!!!!
+    unsigned int tid = blockIdx.x * MAX_THREADS + threadIdx.x;
+    float sum = 0;
+    for(int n = tid; n<_dim; n += MAX_BLOCKS*MAX_THREADS)
+    {
+        sum += _a1[n] * _a2[n];
+    }
+    _dst[tid] = sum;
 }
 
 /* This program sets up two large arrays of size dim and computes the
@@ -87,19 +93,23 @@ int main(int argc, char* argv[])
     if (gpuVersion)
     {
         // allocate two gpuArray 1 and gpuArray 2 and gpuResult array on GPU
-
-        //!!!!!!!!! missing  !!!!!!!!!!!!!!!!!!!!!!!!
+        cudaMalloc((void**)&gpuArray1, dim * sizeof(float));
+        cudaMalloc((void**)&gpuArray2, dim * sizeof(float));
+        cudaMalloc((void**)&gpuResult, MAX_BLOCKS*MAX_THREADS * sizeof(float));
+        checkCUDAError("cudaMalloc");
 
         // copy the array once to the device
 
-        //!!!!!!!!! missing  !!!!!!!!!!!!!!!!!!!!!!!!
+        cudaMemcpy(gpuArray1, cpuArray1, dim * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemcpy(gpuArray2, cpuArray2, dim * sizeof(float), cudaMemcpyHostToDevice);
+        checkCUDAError("cudaMemcpy");
 
         // allocate an array to download the results of all threads
         h = new float[MAX_BLOCKS * MAX_THREADS];
     }
 
     const int num_iters = 100;
-    double finalDotProduct;
+    double finalDotProduct = 0.0;
 
     if (!gpuVersion)
     {
@@ -127,10 +137,17 @@ int main(int argc, char* argv[])
         {
             dotProdKernel<<<blockGrid, threadBlock>>>(gpuResult, gpuArray1, gpuArray2, dim);
         }
+        checkCUDAError("kernel execution");
 
         // download and combine the results of multiple threads on the CPU
+        cudaDeviceSynchronize();
+        cudaMemcpy(h, gpuResult, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost); 
+        checkCUDAError("cudaMemcpy");
+        for (int nElem = 0; nElem < MAX_BLOCKS * MAX_THREADS; nElem++)
+        {
+            finalDotProduct +=h[nElem];
+        }
 
-        //!!!!!!!!! missing  !!!!!!!!!!!!!!!!!!!!!!!!
     }
 
     printf("Result: %f\n", finalDotProduct);
@@ -139,8 +156,9 @@ int main(int argc, char* argv[])
     {
 
         // cleanup GPU memory
-
-        //!!!!!!!!! missing  !!!!!!!!!!!!!!!!!!!!!!!!
+        cudaFree(gpuArray1);
+        cudaFree(gpuArray2);
+        cudaFree(gpuResult);
 
         delete[] h;
     }
