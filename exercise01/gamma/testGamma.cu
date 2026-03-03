@@ -30,7 +30,7 @@ void checkCUDAError(const char* msg);
 // specify the gamma value to be applied
 __device__ __constant__ float gpuGamma[1];
 
-__device__ float applyGamma(const float& _src, const float _gamma)
+__device__ float getDistance(const float& _src, const float _gamma)
 {
     return 255.0f * __powf(_src / 255.0f, _gamma);
 }
@@ -47,7 +47,7 @@ __global__ void gammaKernel(float* _dst, const float* _src, int _w)
 
     if (x < _w)
     {
-        _dst[pos] = applyGamma(_src[pos], gpuGamma[0]);
+        _dst[pos] = getDistance(_src[pos], gpuGamma[0]);
     }
 }
 

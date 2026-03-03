@@ -29,3 +29,4 @@ message("CMAKE_CUDA_ARCHITECTURES: ${CMAKE_CUDA_ARCHITECTURES}")
 message("CMAKE_CUDA_FLAGS: ${CMAKE_CUDA_FLAGS}")
 
 add_executable(testGamma testGamma.cu PPM.cpp)
+add_executable(testDifference testDifference.cu PPM.cpp)
