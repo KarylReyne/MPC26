@@ -35,12 +35,14 @@
 
 // includes, system
 // #include <__clang_cuda_builtin_vars.h>
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 
 #include <cuda_runtime.h>
+#include <string>
 
 using namespace std;
 
