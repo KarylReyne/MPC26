@@ -125,9 +125,9 @@ int main(int argc, char* argv[])
     {
         // !!! missing !!!
         // Allocate GPU memory
-        cudaMalloc(gpuOperator1, dim * sizeof(float));
-        cudaMalloc(gpuOperator2, dim * sizeof(float));
-        cudaMalloc(gpuResult, MAX_THREADS * MAX_BLOCKS * sizeof(float));
+        cudaMalloc(&gpuOperator1[pass], dim * sizeof(float));
+        cudaMalloc(&gpuOperator2[pass], dim * sizeof(float));
+        cudaMalloc(&gpuResult[pass], MAX_THREADS * MAX_BLOCKS * sizeof(float));
     }
 
     // create two streams for the last mode
@@ -190,9 +190,9 @@ int main(int argc, char* argv[])
             {
                 // !!! missing !!!
                 // Calculate the dot product with non-pageable memory.
-                // cudaMemcpy(gpuOperator2[pass], cpuOperator2[pass], dim * sizeof(float),
-                //            cudaMemcpyHostToDevice);
-                cudaHostGetDevicePointer(&gpuOperator2[pass], cpuOperator2[pass], 0);
+                cudaMemcpy(gpuOperator2[pass], cpuOperator2[pass], dim * sizeof(float),
+                           cudaMemcpyHostToDevice);
+                // cudaHostGetDevicePointer(&gpuOperator2[pass], cpuOperator2[pass], 0);
 
                 // call the kernel
                 dotProdKernel<<<blockGrid, threadBlock>>>(gpuResult[pass], gpuOperator1[pass],
@@ -223,9 +223,9 @@ int main(int argc, char* argv[])
             size_t half_size = (dim*sizeof(float))/2;
 
             cudaMemcpyAsync(
-                gpuOperator2, 
-                cpuOperator2, 
-                half_size, 
+                gpuOperator2[0], 
+                cpuOperator2[0], 
+                dim*sizeof(float), 
                 cudaMemcpyHostToDevice, 
                 stream[0]
             );
@@ -238,23 +238,20 @@ int main(int argc, char* argv[])
             );
 
             cudaMemcpyAsync(
-                gpuOperator2+half_size,
-                cpuOperator2+half_size,
-                half_size, 
+                gpuOperator2[1],
+                cpuOperator2[1],
+                dim*sizeof(float), 
                 cudaMemcpyHostToDevice, 
                 stream[1]
             );
 
             dotProdKernel<<<blockGrid, threadBlock, 0, stream[1]>>>(
-                gpuResult[0], 
-                gpuOperator1[0], 
-                gpuOperator2[0], 
+                gpuResult[1], 
+                gpuOperator1[1], 
+                gpuOperator2[1], 
                 dim
             );
                 
-            cudaStreamSynchronize(stream[0]);
-            cudaStreamSynchronize(stream[1]);
-
             cudaMemcpyAsync(
                 cpuResult[0], 
                 gpuResult[0],
@@ -263,12 +260,15 @@ int main(int argc, char* argv[])
                 stream[0]
             );
             cudaMemcpyAsync(
-                cpuResult[0]+half_size, 
-                gpuResult[0]+half_size,
-                half_size, 
+                cpuResult[1], 
+                gpuResult[1],
+                dim*sizeof(float), 
                 cudaMemcpyDeviceToHost, 
                 stream[1]
             );
+
+            cudaStreamSynchronize(stream[0]);
+            cudaStreamSynchronize(stream[1]);
 
             // Calculate the result
             float finalDotProduct = 0.0f;
@@ -288,13 +288,15 @@ int main(int argc, char* argv[])
 
     // !!! missing !!!
     // cleanup GPU memory
-    cudaFree(gpuOperator1);
-    cudaFree(gpuOperator2);
-    cudaFree(gpuResult);
+    
 
     // cleanup host memory
     for (unsigned int pass = 0; pass < 2; pass++)
     {
+        cudaFree(gpuOperator1[pass]);
+        cudaFree(gpuOperator2[pass]);
+        cudaFree(gpuResult[pass]);
+
         if (mode == 0) // simple memcpy
         {
             delete[] cpuOperator1[pass];

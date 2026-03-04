@@ -11,7 +11,9 @@
 // $Log$
 // ==========================================================================
 
+// #include <__clang_cuda_runtime_wrapper.h>
 #include <algorithm>
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -26,6 +28,8 @@ void checkCUDAError(const char* msg);
 
 #define MAX_BLOCKS 256
 #define MAX_THREADS 256
+
+#define RTEST
 
 inline __int64_t continuousTimeNs()
 {
@@ -69,9 +73,22 @@ __global__ void dotProdKernel(float* dst, const float* a1, const float* a2, int 
  Write a reduction sum kernel which reduces the input to the sum in log(n) steps.
  The number of total threads will be divided by nThreads(iter-1) in each iteration.
 
- Inside the kernel, the problem will be reduced by a factor of 2 in each step.
+ Inside the kernel, the problem will be reduced by a factor of 2 in each step.*/
 
- */
+__global__ void reduceSumKernel(float* dst, const float* src, int dim, int step){
+    // Number of the current thread
+    unsigned int threadNo = blockDim.x * blockIdx.x + threadIdx.x;
+    // Number of all threads
+    unsigned int threadSize = gridDim.x * blockDim.x;
+    unsigned int threadEnd = min(dim, threadNo+threadSize);
+    
+    float result = 0.0f;
+    for (unsigned int t = threadNo; t < threadEnd; t += step){
+        result += src[t];
+    }
+    dst[threadNo] = result;
+}
+
 
 int main(int argc, char* argv[])
 {
@@ -123,9 +140,7 @@ int main(int argc, char* argv[])
 
     cudaMalloc((void**)&gpuResult1, MAX_BLOCKS * MAX_THREADS * sizeof(float));
 
-    cudaMalloc((void**)&gpuResult2,
-               MAX_BLOCKS * MAX_THREADS
-                   * sizeof(float)); // MAX_BLOCKS elements would be sufficient here...
+    cudaMalloc((void**)&gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float)); // MAX_BLOCKS elements would be sufficient here...
 
     // Upload input data
 
@@ -184,6 +199,11 @@ int main(int argc, char* argv[])
             // !!! missing !!!
             // Reduce all the dot product summands to one single value,
             // download it to a float and use it to set finalDotProduct.
+            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult1, dim, 1);
+            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult2, dim, MAX_THREADS);
+            cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
+            finalDotProduct = cpuResult[0];
+            // printf("finalDotProduct: %f\n", finalDotProduct);
 
             break;
 

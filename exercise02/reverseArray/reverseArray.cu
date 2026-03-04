@@ -58,14 +58,16 @@ __global__ void reverseArrayBlock(int* dst, int* src)
     const unsigned int iter = dimA / (blockDim.x * gridDim.x);
     int pos = blockIdx.x * blockDim.x + threadIdx.x;
     const unsigned int max_pos = dimA - 1;
+
+    dst[max_pos-pos] = src[pos];
     
-    for (int i = 0; i < iter; ++i){
-        dst[max_pos-pos] = src[pos];
-        pos += blockDim.x * gridDim.x;
-    }
-    if (pos < dimA){
-        dst[blockIdx.x * blockDim.x + threadIdx.x] = src[pos];
-    }
+    // for (int i = 0; i < iter; ++i){
+    //     dst[max_pos-pos] = src[pos];
+    //     pos += blockDim.x * gridDim.x;
+    // }
+    // if (pos < dimA){
+    //     dst[blockIdx.x * blockDim.x + threadIdx.x] = src[pos];
+    // }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
