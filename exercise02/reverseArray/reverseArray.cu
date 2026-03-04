@@ -34,7 +34,9 @@
  */
 
 // includes, system
+// #include <__clang_cuda_builtin_vars.h>
 #include <cassert>
+#include <cstddef>
 #include <cstdio>
 #include <cstdlib>
 
@@ -50,6 +52,18 @@ __global__ void reverseArrayBlock(int* dst, int* src)
 {
     // !!! missing !!!
     // Move data in reversed order from one array to another.
+    const unsigned int dimA = 256 * 1024; // ;)
+    const unsigned int iter = dimA / (blockDim.x * gridDim.x);
+    int pos = blockIdx.x * blockDim.x + threadIdx.x;
+    const unsigned int max_pos = dimA - 1;
+    
+    for (int i = 0; i < iter; ++i){
+        dst[max_pos-pos] = src[pos];
+        pos += blockDim.x * gridDim.x;
+    }
+    if (pos < dimA){
+        dst[blockIdx.x * blockDim.x + threadIdx.x] = src[pos];
+    }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -71,6 +85,7 @@ int main(int argc, char** argv)
     int numBlocks;
     // !!! missing !!!
     // Compute the number of blocks needed.
+    numBlocks = ceil(dimA/numThreadsPerBlock);
 
     // allocate host and device memory
     size_t memSize = numBlocks * numThreadsPerBlock * sizeof(int);
