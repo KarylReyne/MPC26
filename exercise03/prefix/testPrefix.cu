@@ -144,6 +144,103 @@ __global__ void featureKernel(int* _dst, cudaTextureObject_t texImg, int _w, int
 // Kernels for Prefix Sum calculation (compaction, spreading, possibly shifting)
 // and for generating the gpuFeatureList from the prefix sum.
 
+__global__ void ReductionElementsKernel(int* _dst, const int* _featureImg, int _w, int _h)
+{
+    // compute position in image
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y;
+    int pos = y * _w + x; 
+    unsigned int t = threadIdx.x; 
+
+    extern __shared__ int shared[];
+     
+
+    if(gridDim.y == 1)
+    {
+        shared[t] = _featureImg[THREADS * (t+1)];
+    }
+    else
+    {
+        shared[t] = _featureImg[pos];
+    }
+    __syncthreads();
+
+    for(unsigned int stride = 2; stride <= THREADS; stride *= 2)
+    {
+        if((t+1) % stride == 0)
+        {
+            shared[t] += shared[t-stride/2]; 
+        }
+        __syncthreads();
+    }
+
+    if(gridDim.y == 1)
+    {
+        _dst[THREADS*(t+1)] = shared[t];
+    }
+    else
+    {
+        _dst[pos + 1] = shared[t];
+        if(blockIdx.x == 0 && blockIdx.y == 0 && threadIdx.x == 0) _dst[0] = 0;
+    }
+ 
+
+}
+
+__global__ void SpreadingElementsKernel(int* _dst, const int* _src, int _w, int _h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y;
+    int pos = y * _w + x;
+
+    unsigned int t = threadIdx.x; 
+    extern __shared__ int shared[]; 
+    shared[t] = _src[THREADS*t];
+
+    if (gridDim.y == 1){
+        shared[t] = _src[THREADS*t];
+    }
+    else
+    {
+        shared[t] = _src[pos];
+    }
+
+    __syncthreads(); 
+
+    for(unsigned int stride = THREADS; stride >= 2; stride /= 2)
+    {
+        if(t % (stride/2) == 0 && (t % stride) != 0)
+        {
+            shared[t] += shared[t-stride/2];
+        }
+        __syncthreads();
+    } 
+
+    if (gridDim.y == 1)
+    {
+        _dst[THREADS*t] = shared[t];
+    }
+    else 
+    {
+        _dst[pos-1] = shared[t];
+    }
+    
+}
+
+
+__global__ void FeatureListKernel(int* _dst, const int* _src, int _w, int _h)
+{
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y;
+    int pos = y * _w + x;
+
+    if(_src[pos] < _src[pos+1])
+    {
+        _dst[_src[pos]] = pos+1; 
+    }
+
+}
+
 /* This program detects the local maxima in an image, writes their
 location into a vector and then computes the Voronoi diagram of the
 image given the detected local maxima as cluster centers.
@@ -279,7 +376,7 @@ int main(int argc, char* argv[])
         // GPU compaction:
         ////////////////////////////////////////////////////////////
 
-        // !!! missing !!!
+        // ---------------------- added ----------------------
         // implement the prefixSum algorithm
         // 1. Do the reduction step for all scanlines, one scanline per block.
         // 2. Do the reduction step for the last elements of all scanlines, all in one block.
@@ -289,6 +386,73 @@ int main(int argc, char* argv[])
 
         // Make sure that gpuFeatureList is filled according to the CPU implementation
         // and that nFeatures has the correct value!
+
+        int sharedMemSize = THREADS*sizeof(int); 
+        ReductionElementsKernel<<<blockGrid, threadBlock, sharedMemSize>>>(gpuPrefixSumShifted, gpuFeatureImg, w, h);
+        
+        dim3 blockGridOne = (w/THREADS, 1, 1);
+        ReductionElementsKernel<<<blockGridOne, threadBlock, sharedMemSize>>>(gpuPrefixSumShifted, gpuPrefixSumShifted, w, h);
+
+        SpreadingElementsKernel<<<blockGridOne, threadBlock, sharedMemSize>>>(gpuPrefixSumShifted, gpuPrefixSumShifted, w, h);
+        SpreadingElementsKernel<<<blockGrid, threadBlock, sharedMemSize>>>(gpuPrefixSumShifted, gpuPrefixSumShifted, w, h); 
+
+        cudaDeviceSynchronize();
+        cudaMemcpy(&nFeatures, gpuPrefixSumShifted + nPix, sizeof(int), cudaMemcpyDeviceToHost);
+        cout << "nFeatures: " << nFeatures << endl; 
+
+        // For debugging purposes: Prints some values of gpuPrefixSumShifted
+        /*
+        // helper buffer
+        int vals[20];
+
+        // --- prefix[0..9]
+        cudaMemcpy(vals, gpuPrefixSumShifted, 10*sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[0..9]: ";
+        for(int i = 0; i < 10; i++)
+            cout << vals[i] << " ";
+        cout << endl;
+
+
+        // --- prefix[w-2 .. w+2]
+        cudaMemcpy(vals, gpuPrefixSumShifted + (w-2), 5*sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[w-2 .. w+2]: ";
+        for(int i = 0; i < 5; i++)
+            cout << vals[i] << " ";
+        cout << endl;
+
+
+        // --- prefix[2w-2 .. 2w+2]
+        cudaMemcpy(vals, gpuPrefixSumShifted + (255*w-2), 5*sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[255w-2 .. 255w+2]: ";
+        for(int i = 0; i < 5; i++)
+            cout << vals[i] << " ";
+        cout << endl;
+
+
+        // --- prefix[nPix]
+        int last;
+        cudaMemcpy(&last, gpuPrefixSumShifted + nPix, sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[nPix] = " << last << endl;
+        */
+
+        
+        FeatureListKernel<<<blockGrid, threadBlock>>>(gpuFeatureList, gpuPrefixSumShifted, w, h);
+
+        /* For Debbugging purposes only
+        int* features = new int[20]; 
+        cudaMemcpy(features, gpuFeatureList, sizeof(int)*20, cudaMemcpyDeviceToHost); 
+        for (int i = 0; i < 20; i++)
+        {
+            cout << features[i] << " ";
+            
+        }
+        cout << endl;
+        //cout <<"first 20 features: " << features << endl;
+        */ 
     }
 
     // now compute the Voronoi Diagram around the detected features.
