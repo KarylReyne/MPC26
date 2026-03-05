@@ -61,8 +61,8 @@ __global__ void correlationKernel(float3* _dst, cudaTextureObject_t texImg1,
             // Attention: Texture access is done via tex2D. Use normalized coordinates!
 
             // example for fetching the texture value at the image center
-            float4 pxImg1 = tex2D<float4>(texImg1, (i + 0.5f)/_w, (j + 0.5f)/_h);
-            float4 pxImg2 = tex2D<float4>(texImg2, (i + offsX + 0.5f)/_w, (j + offsY + 0.5f)/_h);
+            float4 pxImg1 = tex2D<float4>(texImg1, float(i)/_w, float(j)/_h);
+            float4 pxImg2 = tex2D<float4>(texImg2, float(i + offsX)/_w, float(j + offsY)/_h);
             res.x += pxImg1.x *pxImg2.x; 
             res.y += pxImg1.y *pxImg2.y;
             res.z += pxImg1.z *pxImg2.z;
