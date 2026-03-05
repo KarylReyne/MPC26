@@ -223,7 +223,7 @@ __global__ void SpreadingAllElementsKernel(int* _dst, const int* _src, int _w, i
     }
     else 
     {
-        shared[t] = _src[pos-1];
+        shared[t] = _src[pos];
     }
     __syncthreads(); 
 
@@ -248,7 +248,7 @@ __global__ void FeatureListKernel(int* _dst, const int* _src, int _w, int _h)
 
     if(_src[pos] < _src[pos+1])
     {
-        _dst[_src[pos]] = pos; 
+        _dst[_src[pos]] = pos+1; 
     }
 
 }
@@ -410,9 +410,61 @@ int main(int argc, char* argv[])
 
         cudaDeviceSynchronize();
         cudaMemcpy(&nFeatures, gpuPrefixSumShifted + nPix, sizeof(int), cudaMemcpyDeviceToHost);
+        cout << "nFeatures: " << nFeatures << endl; 
+
+        // helper buffer
+        int vals[20];
+
+        // --- prefix[0..9]
+        cudaMemcpy(vals, gpuPrefixSumShifted, 10*sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[0..9]: ";
+        for(int i = 0; i < 10; i++)
+            cout << vals[i] << " ";
+        cout << endl;
+
+
+        // --- prefix[w-2 .. w+2]
+        cudaMemcpy(vals, gpuPrefixSumShifted + (w-2), 5*sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[w-2 .. w+2]: ";
+        for(int i = 0; i < 5; i++)
+            cout << vals[i] << " ";
+        cout << endl;
+
+
+        // --- prefix[2w-2 .. 2w+2]
+        cudaMemcpy(vals, gpuPrefixSumShifted + (255*w-2), 5*sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[255w-2 .. 255w+2]: ";
+        for(int i = 0; i < 5; i++)
+            cout << vals[i] << " ";
+        cout << endl;
+
+
+        // --- prefix[nPix]
+        int last;
+        cudaMemcpy(&last, gpuPrefixSumShifted + nPix, sizeof(int), cudaMemcpyDeviceToHost);
+
+        cout << "prefix[nPix] = " << last << endl;
 
         
         FeatureListKernel<<<blockGrid, threadBlock>>>(gpuFeatureList, gpuPrefixSumShifted, w, h);
+
+        /* For Debbugging purposes only
+        int* features = new int[20]; 
+        cudaMemcpy(features, gpuFeatureList, sizeof(int)*20, cudaMemcpyDeviceToHost); 
+        for (int i = 0; i < 20; i++)
+        {
+            cout << features[i] << " ";
+            
+        }
+        cout << endl;
+        //cout <<"first 20 features: " << features << endl;
+        */ 
+
+
+
 
 
 
