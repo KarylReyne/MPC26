@@ -58,6 +58,56 @@ static __global__ void noSortKernel(const Position* inputPositions, int numInput
 // !!! missing !!!
 // Kernels needed for sortPositionsIntoBuckets(...)
 
+static __global__ void bucketResetKernel(int numInputPositions, Bucket* outputBuckets)
+{
+    int numBuckets = BucketsPerAxis * BucketsPerAxis;
+    
+    for (int i = 0; i < numBuckets; i++)
+    {
+        outputBuckets[i].startIndex = outputBuckets[i].startIndex; // doesn't do anything, just for clarity
+        outputBuckets[i].numElements = 0;
+    }
+}
+
+static __global__ void histogramOverInput(const Position* inputPositions, int numInputPositions, Bucket* outputBuckets)
+{
+    int numBuckets = BucketsPerAxis * BucketsPerAxis;
+    int bucket_idx = numBuckets-1;
+
+    for (int i = numInputPositions-1; i >= 0; i--){
+        // determine the index of the given position
+        Position pos = inputPositions[i];
+        int pos_idx = pos.x * BucketsPerAxis + pos.y;
+
+        // get the last bucket that starts before or at the current input position
+        while (outputBuckets[bucket_idx].startIndex > pos_idx) // TODO this may not be necessary?
+            bucket_idx--;
+
+        outputBuckets[bucket_idx].numElements++; 
+    }
+}
+
+static __global__ void getBucketStartingIdxInOutput(Bucket* outputBuckets)
+{
+    int numBuckets = BucketsPerAxis * BucketsPerAxis;
+    int cumBucketSize = 0;
+    
+    for (int i = 0; i < numBuckets; i++){
+        outputBuckets[i].startIndex = cumBucketSize;
+        cumBucketSize += outputBuckets[i].numElements;
+    }
+}
+
+static __global__ void populateOutput(const Position* inputPositions, int numInputPositions, Position* outputPositions)
+{
+    for (int i = 0; i < numInputPositions; i++){
+        // Position pos = inputPositions[i];
+        // int pos_idx = pos.x * BucketsPerAxis + pos.y;
+        // outputPositions[pos_idx] = inputPositions[i];
+        outputPositions[i] = inputPositions[i];
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //
 // Sort a set of positions into a set of buckets
@@ -88,6 +138,16 @@ static void sortPositionsIntoBuckets(CudaArray<Position>& cudaInputPositions,
     //=================  Your code here =====================================
     // !!! missing !!!
 
+    int numInputPositions = cudaInputPositions.size();
+    const Position* inputPositions = cudaInputPositions.cudaArray();
+    Position* outputPositions = cudaOutputPositions.cudaArray();
+    Bucket* outputBuckets = cudaOutputPositionBuckets.cudaArray();
+
+    bucketResetKernel<<<1, 1>>>(numInputPositions, outputBuckets);
+    histogramOverInput<<<1, 1>>>(inputPositions, numInputPositions, outputBuckets);
+    getBucketStartingIdxInOutput<<<1, 1>>>(outputBuckets);
+    populateOutput<<<1, 1>>>(inputPositions, numInputPositions, outputPositions);
+
     // Instead of sorting, we will now run a dummy kernel that just duplicates the
     //  output positions, and constructs a set of dummy buckets. This is just so that
     //  the test program will not crash when you try to run it.
@@ -98,8 +158,8 @@ static void sortPositionsIntoBuckets(CudaArray<Position>& cudaInputPositions,
 
     //========== Remove this code when you begin to implement your own sorting algorithm ==========
 
-    noSortKernel<<<1, 1>>>(cudaInputPositions.cudaArray(), cudaInputPositions.size(),
-                           cudaOutputPositions.cudaArray(), cudaOutputPositionBuckets.cudaArray());
+    // noSortKernel<<<1, 1>>>(cudaInputPositions.cudaArray(), cudaInputPositions.size(),
+    //                        cudaOutputPositions.cudaArray(), cudaOutputPositionBuckets.cudaArray());
 }
 
 ///////////////////////////////////////////////////////////////////////////////////////////////

@@ -1,5 +1,9 @@
 #include "Tools.h"
 
+// #include <__clang_cuda_builtin_vars.h>
+// #include <__clang_cuda_builtin_vars.h>
+// #include <__clang_cuda_builtin_vars.h>
+#include <cstdio>
 #include <iomanip>
 #include <iostream>
 
@@ -9,10 +13,13 @@ using namespace std;
 // Simple utility function to check for CUDA runtime errors
 void checkCUDAError(const char* msg);
 
-//#define VERBOSE // Prints input matrix and results. Only uncomment for small matrix sizes!
+#define VERBOSE // Prints input matrix and results. Only uncomment for small matrix sizes!
 #define RUN_CPU // Runs CPU code for reference (slow!!!)
-#define N 1024 // Must be a multiple of THREADS_PER_BLOCK
-#define THREADS_PER_BLOCK 32 // per axis -> block has this value squared threads.
+// #define N 1024 // Must be a multiple of THREADS_PER_BLOCK
+// #define THREADS_PER_BLOCK 32 // per axis -> block has this value squared threads.
+#define N 4 // Must be a multiple of THREADS_PER_BLOCK
+#define THREADS_PER_BLOCK 2 // per axis -> block has this value squared threads.
+
 void multiplyMatrix(float* result, const float* a, const float* b, const int n)
 {
     for (unsigned int i = 0; i < n; i++)
@@ -53,6 +60,17 @@ __global__ void multiplyMatrixGpuBasic(float* result, const float* a, const floa
 {
     // TODO: Implement a trivial GPU square matrix multiplication.
     // Use one thread per output element.
+
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float dot = 0.0;
+    if (i < n && j < n){
+        for (int k = 0; k < n; k++){
+            dot += a[i*n+k]*b[k*n+j];
+        }
+        result[i*n+j] = dot;
+    }
 }
 
 __global__ void multiplyMatrixGpuSharedMemory(float* result, const float* a, const float* b, const int n)
@@ -60,6 +78,28 @@ __global__ void multiplyMatrixGpuSharedMemory(float* result, const float* a, con
     // TODO: Implement a more sophisticated GPU square matrix multiplication.
     // Compute square submatrices per block. Load the common input
     // data of all threads of a block into shared memory cooperatively.
+
+    __shared__ float a_submatrix[THREADS_PER_BLOCK*THREADS_PER_BLOCK];
+    __shared__ float b_submatrix[THREADS_PER_BLOCK*THREADS_PER_BLOCK];
+
+    int i = blockIdx.y * blockDim.y + threadIdx.y;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float partial_dot = 0.0;
+    int submatrix_limit = (n+THREADS_PER_BLOCK-1)/THREADS_PER_BLOCK;
+    for (int k = 0; k < submatrix_limit; k++){
+        // upload elements of submatrices
+        a_submatrix[threadIdx.y*submatrix_limit+threadIdx.x] = a[i*n + k*THREADS_PER_BLOCK + threadIdx.x];
+        b_submatrix[threadIdx.y*submatrix_limit+threadIdx.x] = b[(k*THREADS_PER_BLOCK+threadIdx.y) * n + j];
+        __syncthreads();
+
+        //perform multiplication over submatrices
+        for (int l = 0; l < THREADS_PER_BLOCK; l++){
+            partial_dot += a_submatrix[threadIdx.y*THREADS_PER_BLOCK+l]*b_submatrix[l*THREADS_PER_BLOCK+threadIdx.x];
+        }
+    }
+
+    result[blockIdx.y * n + blockIdx.x] = partial_dot;
 }
 
 int main(int argc, char** argv)
