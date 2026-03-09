@@ -85,6 +85,7 @@ __global__ void reduceSumKernel(float* dst, const float* src, int dim, int step)
     float result = 0.0f;
     for (unsigned int t = threadNo; t < threadEnd; t += step){
         result += src[t];
+        dst[t] = 0; // ensure that the array only contains the reduced sum
     }
     dst[threadNo] = result;
 }
