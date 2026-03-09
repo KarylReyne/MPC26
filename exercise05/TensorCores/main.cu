@@ -9,6 +9,7 @@
 #include <mma.h>
 
 using namespace std;
+using namespace nvcuda; 
 
 // Simple utility function to check for CUDA runtime errors
 void checkCUDAError(const char* msg);
@@ -83,13 +84,29 @@ __global__ void TensorCoreMatrixMultiplication(__half const* A, __half const* B,
     uint32_t const warpIdx_y = blockIdx.y * blockDim.y + threadIdx.y;
 
     // Declare the fragments. 
+    wmma::fragment<wmma::matrix_a, S, S, S, __half, wmma::row_major> a_frag; 
+    wmma::fragment<wmma::matrix_b, S, S, S, __half, wmma::row_major> b_frag;
+    wmma::fragment<wmma::accumulator, S, S, S, float> acc_frag; 
+    //wmma::fragment<wmma::accumulator, S, S, S, float> d_frag; // probably unnecessary? 
 
     // Make sure the accumulator starts from 0.
+    wmma::fill_fragment(acc_frag, 0.0f); 
 
-    // Load the matrices into the fragments and perform the multiplication
+    for (int k = 0; k < n; k += S)
+    {
+        // Load the matrices into the fragments 
+
+        // base + warpIdx_y * tile height * row length + k 
+        wmma::load_matrix_sync(a_frag, A + warpIdx_y * S * n + k , n); 
+        // base + k * row length + warpIdx_x * tile width
+        wmma::load_matrix_sync(b_frag, B + k*n + warpIdx_x * S, n); 
+    
+        // Perform the multiplication
+        wmma::mma_sync(acc_frag, a_frag, b_frag, acc_frag);
+    }
 
     //store the output
-
+    wmma::store_matrix_sync(C+ warpIdx_y * S * n + warpIdx_x * S, acc_frag, n, wmma::mem_row_major);  
 }
 
 int main(int argc, char** argv)

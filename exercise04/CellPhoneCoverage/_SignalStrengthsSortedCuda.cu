@@ -82,9 +82,8 @@ static __global__ void inputHistogramKernel(const Position* inputPositions, int 
     if (idx < numInputPositions)
     {
         Position pos = inputPositions[idx]; 
-        float bucketSize = 1.0f / BucketsPerAxis; 
-        int bucketX = (int)(pos.x / bucketSize); 
-        int bucketY = (int)(pos.y / bucketSize); 
+        int bucketX = (int)(pos.x * BucketsPerAxis); 
+        int bucketY = (int)(pos.y * BucketsPerAxis); 
 
         // clamp to valid range, in case x=1 or y=1
         bucketX = min(bucketX, BucketsPerAxis - 1); 
@@ -154,10 +153,8 @@ static __global__ void populateOutputKernel(const Position* inputPositions,
     {
         Position pos = inputPositions[idx];
 
-        float bucketSize = 1.0f / BucketsPerAxis;
-
-        int bucketX = (int)(pos.x / bucketSize);
-        int bucketY = (int)(pos.y / bucketSize);
+        int bucketX = (int)(pos.x * BucketsPerAxis);
+        int bucketY = (int)(pos.y * BucketsPerAxis);
 
         bucketX = min(bucketX, BucketsPerAxis - 1);
         bucketY = min(bucketY, BucketsPerAxis - 1);
