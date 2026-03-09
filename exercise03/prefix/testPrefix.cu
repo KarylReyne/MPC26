@@ -171,6 +171,7 @@ __global__ void ReductionElementsKernel(int* _dst, const int* _featureImg, int _
         {
             shared[t] += shared[t-stride/2]; 
         }
+        else break; 
         __syncthreads();
     }
 
@@ -207,12 +208,16 @@ __global__ void SpreadingElementsKernel(int* _dst, const int* _src, int _w, int 
 
     __syncthreads(); 
 
+    bool modified = 0; 
+
     for(unsigned int stride = THREADS; stride >= 2; stride /= 2)
     {
         if(t % (stride/2) == 0 && (t % stride) != 0)
         {
             shared[t] += shared[t-stride/2];
+            modified = 1; 
         }
+        if (modified) break; 
         __syncthreads();
     } 
 
