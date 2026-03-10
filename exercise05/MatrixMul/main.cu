@@ -65,12 +65,10 @@ __global__ void multiplyMatrixGpuBasic(float* result, const float* a, const floa
     int j = blockIdx.x * blockDim.x + threadIdx.x;
 
     float dot = 0.0;
-    if (i < n && j < n){
-        for (int k = 0; k < n; k++){
-            dot += a[i*n+k]*b[k*n+j];
-        }
-        result[i*n+j] = dot;
+    for (int k = 0; k < n; k++){
+        dot += a[i*n+k]*b[k*n+j];
     }
+    result[i*n+j] = dot;
 }
 
 __global__ void multiplyMatrixGpuSharedMemory(float* result, const float* a, const float* b, const int n)
@@ -83,23 +81,22 @@ __global__ void multiplyMatrixGpuSharedMemory(float* result, const float* a, con
     __shared__ float b_submatrix[THREADS_PER_BLOCK*THREADS_PER_BLOCK];
 
     int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    int j = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
 
-    float partial_dot = 0.0;
-    int submatrix_limit = (n+THREADS_PER_BLOCK-1)/THREADS_PER_BLOCK;
-    for (int k = 0; k < submatrix_limit; k++){
-        // upload elements of submatrices
-        a_submatrix[threadIdx.y*submatrix_limit+threadIdx.x] = a[i*n + k*THREADS_PER_BLOCK + threadIdx.x];
-        b_submatrix[threadIdx.y*submatrix_limit+threadIdx.x] = b[(k*THREADS_PER_BLOCK+threadIdx.y) * n + j];
+    float cum_dot = 0.0f;
+    for (int k = 0; k < n; k += THREADS_PER_BLOCK){
+        
+        a_submatrix[threadIdx.y*THREADS_PER_BLOCK+threadIdx.x] = a[i*THREADS_PER_BLOCK*n+k];
+        b_submatrix[threadIdx.y*THREADS_PER_BLOCK+threadIdx.x] = b[k*n+j*THREADS_PER_BLOCK];
         __syncthreads();
-
-        //perform multiplication over submatrices
+    
         for (int l = 0; l < THREADS_PER_BLOCK; l++){
-            partial_dot += a_submatrix[threadIdx.y*THREADS_PER_BLOCK+l]*b_submatrix[l*THREADS_PER_BLOCK+threadIdx.x];
+            cum_dot += a_submatrix[threadIdx.y*THREADS_PER_BLOCK+l]*b_submatrix[l*THREADS_PER_BLOCK+threadIdx.x];
         }
+        __syncthreads();
     }
 
-    result[blockIdx.y * n + blockIdx.x] = partial_dot;
+    result[i*THREADS_PER_BLOCK*n+i] = cum_dot;
 }
 
 int main(int argc, char** argv)
