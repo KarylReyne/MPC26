@@ -2,6 +2,10 @@
 .cache
 exercise*/**/build
 
+# data
+exercise06/my_fully_connected/train-labels-idx1-ubyte
+exercise06/my_fully_connected/train-images-idx3-ubyte
+
 # VSC
 .vscode
 
