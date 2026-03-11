@@ -10,6 +10,16 @@ __device__ scalar_t S(const torch::PackedTensorAccessor32<scalar_t, 4, torch::Re
                       const int b, const int c_i, const int Y, const int X)
 {
     // TODO Equation 2
+    scalar_t sum = (scalar_t)0; 
+    for(int i = Y - 1; i <= Y + 1; i++)
+    {
+        for(int j = X - 1; j <= X + 1; j++)
+        {
+            if (i != Y || j != X) 
+                sum += I[b][c_i][i][j];
+        }
+    }
+    return sum; 
 }
 
 /** forward kernel
@@ -45,6 +55,19 @@ __global__ void center_surround_convolution_forward_kernel(
     // One has to do the calculation for each batch and
     // output element
     // Hint: Do not forget the bias w_b
+    for (int b = 0; b < N; b++)
+    {
+        for (int c_o = 0; c_o < C_o; c_o++)
+        {
+            scalar_t sum = w_b[c_o]; // bias
+            for(int c_i = 0; c_i < C_i; c_i++)
+            {
+                scalar_t s = S(I, b, c_i, y_o+1, x_o+1);
+                sum += I[b][c_i][y_o+1][x_o+1] * w_c[c_i][ c_o] + s * w_s[c_i][c_o]; 
+            } 
+            O[b][c_o][y_o][x_o] = sum;
+        }
+    }
 }
 
 /** backward kernels
@@ -83,6 +106,17 @@ dL_dw_kernel(const torch::PackedTensorAccessor32<scalar_t, 4, torch::RestrictPtr
     // TODO: LOOPS
     // All batches can be accumulated in sum_w_c/sum_w_s
     // Remember dL_dO is already given
+    for (int b = 0; b < N; b++)
+    {
+        for (int y_o = 0; y_o <Y_o; y_o++)
+        {
+            for (int x_o = 0; x_o < X_o; x_o++)
+            {
+                sum_w_c += dL_dO[b][c_o][y_o][x_o] * I[b][c_i][y_o+1][x_o+1]; 
+                sum_w_s += dL_dO[b][c_o][y_o][x_o] * S(I, b, c_i, y_o + 1, x_o + 1); 
+            }
+        }
+    }
 
     // Output
     dL_dw_c[c_i][c_o] = sum_w_c;
@@ -113,6 +147,16 @@ dL_dw_b_kernel(const torch::PackedTensorAccessor32<scalar_t, 4, torch::RestrictP
     // All batches can be accumulated in sum, for all
     // y_o in 0..Y_o and x_0 in 0..X_o
     // Remember dL_dO is already given
+    for(int b = 0; b < N; b++)
+    {
+        for (int y_o = 0; y_o < Y_o; y_o++)
+        {
+            for (int x_o = 0; x_o < X_o; x_o++)
+            {
+                sum += dL_dO[b][c_o][y_o][x_o];
+            }
+        }
+    }
 
     dL_dw_b[c_o] = sum;
 }
@@ -140,6 +184,19 @@ __global__ void dL_dI_kernel(
     // TODO implement Equation 6 here
     // dl_dO_padded is already given. Just lookup the correct value
     // One has to do the calculation for each batch and input element
+
+    for (int b = 0; b < N; b++)
+    {
+        for (int c_i = 0; c_i < C_i; c_i++)
+        {
+            scalar_t sum = 0; 
+            for (int c_o = 0; c_o < C_o; c_o++)
+            {
+                sum += dL_dO_padded[b][c_o][y_i+1][x_i+1] * w_c[c_i][c_o] + S(dL_dO_padded, b, c_o, y_i + 1, x_i + 1) * w_s[c_i][c_o];
+            }
+            dL_dI[b][c_i][y_i][x_i] = sum; 
+        }
+    } 
 }
 
 #define CHECK_CUDA(x) TORCH_CHECK(x.is_cuda(), #x " must be a CUDA tensor")
