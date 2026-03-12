@@ -13,12 +13,12 @@ using namespace std;
 // Simple utility function to check for CUDA runtime errors
 void checkCUDAError(const char* msg);
 
-#define VERBOSE // Prints input matrix and results. Only uncomment for small matrix sizes!
-#define RUN_CPU // Runs CPU code for reference (slow!!!)
-// #define N 1024 // Must be a multiple of THREADS_PER_BLOCK
-// #define THREADS_PER_BLOCK 32 // per axis -> block has this value squared threads.
-#define N 4 // Must be a multiple of THREADS_PER_BLOCK
-#define THREADS_PER_BLOCK 2 // per axis -> block has this value squared threads.
+//#define VERBOSE // Prints input matrix and results. Only uncomment for small matrix sizes!
+//#define RUN_CPU // Runs CPU code for reference (slow!!!)
+#define N 1024 // Must be a multiple of THREADS_PER_BLOCK
+#define THREADS_PER_BLOCK 32 // per axis -> block has this value squared threads.
+//#define N 4 // Must be a multiple of THREADS_PER_BLOCK
+//#define THREADS_PER_BLOCK 2 // per axis -> block has this value squared threads.
 
 void multiplyMatrix(float* result, const float* a, const float* b, const int n)
 {
@@ -81,13 +81,13 @@ __global__ void multiplyMatrixGpuSharedMemory(float* result, const float* a, con
     __shared__ float b_submatrix[THREADS_PER_BLOCK*THREADS_PER_BLOCK];
 
     int i = blockIdx.y * blockDim.y + threadIdx.y;
-    int j = (blockIdx.x * blockDim.x + threadIdx.x) / warpSize;
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
 
     float cum_dot = 0.0f;
     for (int k = 0; k < n; k += THREADS_PER_BLOCK){
         
-        a_submatrix[threadIdx.y*THREADS_PER_BLOCK+threadIdx.x] = a[i*THREADS_PER_BLOCK*n+k];
-        b_submatrix[threadIdx.y*THREADS_PER_BLOCK+threadIdx.x] = b[k*n+j*THREADS_PER_BLOCK];
+        a_submatrix[threadIdx.y*THREADS_PER_BLOCK+threadIdx.x] = a[i*n+ (k + threadIdx.x)];
+        b_submatrix[threadIdx.y*THREADS_PER_BLOCK+threadIdx.x] = b[(k + threadIdx.y) * n + j];
         __syncthreads();
     
         for (int l = 0; l < THREADS_PER_BLOCK; l++){
@@ -96,7 +96,7 @@ __global__ void multiplyMatrixGpuSharedMemory(float* result, const float* a, con
         __syncthreads();
     }
 
-    result[i*THREADS_PER_BLOCK*n+i] = cum_dot;
+    result[i * n + j] = cum_dot;
 }
 
 int main(int argc, char** argv)
