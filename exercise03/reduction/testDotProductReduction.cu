@@ -83,17 +83,21 @@ __global__ void reduceSumKernel(float* dst, float* src, int dim, int flag){
     if (flag == 0){
         for (int stride = blockDim.x/2; stride > 0; stride /= 2){
             __syncthreads();
-            if (threadNo < stride && threadNo+stride < dim){
-                float x = src[threadNo]+src[threadNo+stride];
-                src[threadNo] = x;
-                dst[threadNo] = x;
+            bool b = false;
+            for (int i = 0; i < stride; i++)
+                b |= (threadNo % blockDim.x == i);
+            if (b && threadNo+stride < dim){
+                src[threadNo] += src[threadNo+stride];
             }
         }
+        __syncthreads();
+        for (int i = 1; i < MAX_THREADS+1; i++)
+            dst[threadNo] = src[threadNo];
     }
     else{
         if(threadNo == 0){
-            for (int i = MAX_BLOCKS; i < MAX_BLOCKS*MAX_THREADS; i += MAX_BLOCKS){
-                dst[0] += src[i];
+            for (int i = 1; i < MAX_THREADS+1; i++){
+                dst[0] += src[i*MAX_BLOCKS];
             }
         }
     }
@@ -163,7 +167,8 @@ int main(int argc, char* argv[])
 
     __int64_t startTime = continuousTimeNs();
 
-    bool DEBUG_SINGLE_ITERATION = true;
+    bool DEBUG_SINGLE_ITERATION = false;
+    int DEBUG_print_cut_idx = MAX_BLOCKS+1;
 
     // Iterations for benchmarking only the kernel call
     for (int iter = 0; iter < 1000; ++iter)
@@ -191,6 +196,13 @@ int main(int argc, char* argv[])
             // If dim < launchedThreads, only the first dim elements will contain data
             expectedResultSize = min(dim, MAX_THREADS * MAX_BLOCKS);
 
+            if (DEBUG_SINGLE_ITERATION){
+                cudaMemcpy(cpuResult, gpuResult1, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
+                for (int i = 0; i < DEBUG_print_cut_idx; i ++)
+                    printf("%f ", cpuResult[i]);
+                printf("\n");
+            }
+
             // download and combine the results of multiple threads
 
             cudaMemcpy(cpuResult, gpuResult1, expectedResultSize * sizeof(float),
@@ -212,20 +224,40 @@ int main(int argc, char* argv[])
             // Reduce all the dot product summands to one single value,
             // download it to a float and use it to set finalDotProduct.
             // cudaMemset(gpuResult2, 0.0, MAX_BLOCKS * MAX_THREADS * sizeof(float));
+            if (DEBUG_SINGLE_ITERATION){
+                cudaMemcpy(cpuResult, gpuResult1, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
+                int sum = 0;
+                for (int i = 0; i < DEBUG_print_cut_idx; i ++){
+                    printf("%f ", cpuResult[i]);
+                    sum += cpuResult[i];
+                }
+                printf("\nsum: %i\n", sum);
+            }
+
             reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult1, dim, 0);
             if (DEBUG_SINGLE_ITERATION){
                 cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
-                for (int i = 0; i < 16; i ++)
+                int sum = 0;
+                for (int i = 0; i < DEBUG_print_cut_idx; i ++){
+                    printf("%f ", cpuResult[i]);
+                    sum += cpuResult[i];
+                }
+                printf("\nsum: %i\n", sum);
+                for (int i = 0; i < MAX_BLOCKS*DEBUG_print_cut_idx; i += MAX_BLOCKS)
                     printf("%f ", cpuResult[i]);
                 printf("\n");
             }
-            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult2, dim, 1);
+            reduceSumKernel<<<1, threadBlock>>>(gpuResult2, gpuResult2, dim, 1);
+            cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
             if (DEBUG_SINGLE_ITERATION){
-                cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
-                for (int i = 0; i < 16; i ++)
+                int sum = 0;
+                for (int i = 0; i < DEBUG_print_cut_idx; i ++){
                     printf("%f ", cpuResult[i]);
-                printf("\n");
+                    sum += cpuResult[i];
+                }
+                printf("\nsum: %i\n", sum);
             }
+            finalDotProduct = cpuResult[0];
 
             break;
 
