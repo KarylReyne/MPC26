@@ -12,6 +12,7 @@
 // ==========================================================================
 
 // #include <__clang_cuda_runtime_wrapper.h>
+// #include <__clang_cuda_builtin_vars.h>
 #include <algorithm>
 #include <cassert>
 #include <cstdio>
@@ -28,8 +29,10 @@ void checkCUDAError(const char* msg);
 
 #define MAX_BLOCKS 256
 #define MAX_THREADS 256
+// #define MAX_BLOCKS 4
+// #define MAX_THREADS 4
 
-#define RTEST
+// #define RTEST
 
 inline __int64_t continuousTimeNs()
 {
@@ -75,19 +78,25 @@ __global__ void dotProdKernel(float* dst, const float* a1, const float* a2, int 
 
  Inside the kernel, the problem will be reduced by a factor of 2 in each step.*/
 
-__global__ void reduceSumKernel(float* dst, const float* src, int dim, int step){
-    // Number of the current thread
+__global__ void reduceSumKernel(float* dst, float* src, int dim, int flag){
     unsigned int threadNo = blockDim.x * blockIdx.x + threadIdx.x;
-    // Number of all threads
-    unsigned int threadSize = gridDim.x * blockDim.x;
-    unsigned int threadEnd = min(dim, threadNo+threadSize);
-    
-    float result = 0.0f;
-    for (unsigned int t = threadNo; t < threadEnd; t += step){
-        result += src[t];
-        dst[t] = 0; // ensure that the array only contains the reduced sum
+    if (flag == 0){
+        for (int stride = blockDim.x/2; stride > 0; stride /= 2){
+            __syncthreads();
+            if (threadNo < stride && threadNo+stride < dim){
+                float x = src[threadNo]+src[threadNo+stride];
+                src[threadNo] = x;
+                dst[threadNo] = x;
+            }
+        }
     }
-    dst[threadNo] = result;
+    else{
+        if(threadNo == 0){
+            for (int i = MAX_BLOCKS; i < MAX_BLOCKS*MAX_THREADS; i += MAX_BLOCKS){
+                dst[0] += src[i];
+            }
+        }
+    }
 }
 
 
@@ -154,6 +163,8 @@ int main(int argc, char* argv[])
 
     __int64_t startTime = continuousTimeNs();
 
+    bool DEBUG_SINGLE_ITERATION = true;
+
     // Iterations for benchmarking only the kernel call
     for (int iter = 0; iter < 1000; ++iter)
     {
@@ -200,15 +211,27 @@ int main(int argc, char* argv[])
             // !!! missing !!!
             // Reduce all the dot product summands to one single value,
             // download it to a float and use it to set finalDotProduct.
-            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult1, dim, 1);
-            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult2, dim, MAX_THREADS);
-            cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
-            finalDotProduct = cpuResult[0];
-            // printf("finalDotProduct: %f\n", finalDotProduct);
+            // cudaMemset(gpuResult2, 0.0, MAX_BLOCKS * MAX_THREADS * sizeof(float));
+            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult1, dim, 0);
+            if (DEBUG_SINGLE_ITERATION){
+                cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
+                for (int i = 0; i < 16; i ++)
+                    printf("%f ", cpuResult[i]);
+                printf("\n");
+            }
+            reduceSumKernel<<<blockGrid, threadBlock>>>(gpuResult2, gpuResult2, dim, 1);
+            if (DEBUG_SINGLE_ITERATION){
+                cudaMemcpy(cpuResult, gpuResult2, MAX_BLOCKS * MAX_THREADS * sizeof(float), cudaMemcpyDeviceToHost);
+                for (int i = 0; i < 16; i ++)
+                    printf("%f ", cpuResult[i]);
+                printf("\n");
+            }
 
             break;
 
         } // end switch
+        if (DEBUG_SINGLE_ITERATION)
+            break;
     }
 
     __int64_t endTime = continuousTimeNs();
